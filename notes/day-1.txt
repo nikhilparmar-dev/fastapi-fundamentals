@@ -1,0 +1,280 @@
+---
+
+# TODAY'S PLAN — Week 2, Day 1
+**Topic: FastAPI — Setup + First GET API**
+
+---
+
+## WHAT TO DO TODAY:
+1. Install FastAPI and run your first server
+2. Create file `day8_fastapi_intro.py`
+3. Type every example yourself — no copy paste
+4. See your API live in browser
+
+---
+
+## NOTES
+
+---
+
+**Definition:** FastAPI is a modern Python framework for building REST APIs — fast, clean, and automatic documentation included.
+
+**Why FastAPI:**
+```
+Flask      → old, manual work
+Django     → heavy, too much setup
+FastAPI    → fast, modern, automatic docs, perfect for APIs
+```
+
+---
+
+### INSTALLATION
+
+Open terminal and run:
+```bash
+pip install fastapi
+pip install uvicorn
+```
+
+```
+fastapi  → the framework
+uvicorn  → the server that runs your FastAPI app
+```
+
+---
+
+### YOUR FIRST API
+
+Create `main.py`:
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def home():
+    return {"message": "Hello Nikhil!", "status": "API is running"}
+```
+
+Run in terminal:
+```bash
+uvicorn main:app --reload
+```
+
+```
+main     → your file name (main.py)
+app      → your FastAPI instance
+--reload → auto restarts when you save
+```
+
+Open browser:
+```
+http://127.0.0.1:8000         → your API response
+http://127.0.0.1:8000/docs    → automatic documentation ⭐
+http://127.0.0.1:8000/redoc   → another doc style
+```
+
+---
+
+### HOW FastAPI WORKS
+
+```
+Browser/Postman
+      ↓
+  sends request to URL
+      ↓
+  FastAPI matches URL to function
+      ↓
+  function runs
+      ↓
+  returns dict → FastAPI converts to JSON
+      ↓
+  response sent back
+```
+
+---
+
+### GET ENDPOINTS — READ DATA
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+# Root endpoint
+@app.get("/")
+def home():
+    return {"message": "Welcome to Nikhil's API"}
+
+# Students list endpoint
+@app.get("/students")
+def get_students():
+    students = [
+        {"id": 1, "name": "Nikhil", "city": "Kadi"},
+        {"id": 2, "name": "Rahul",  "city": "Surat"},
+        {"id": 3, "name": "Priya",  "city": "Ahmedabad"},
+    ]
+    return {"students": students, "total": len(students)}
+
+# Single item endpoint
+@app.get("/students/first")
+def get_first_student():
+    return {"id": 1, "name": "Nikhil", "city": "Kadi"}
+```
+
+---
+
+### PATH PARAMETERS — DYNAMIC URLs
+
+```python
+@app.get("/students/{student_id}")
+def get_student(student_id: int):
+    return {"id": student_id, "message": f"Fetching student {student_id}"}
+
+# URL: /students/1  → student_id = 1
+# URL: /students/5  → student_id = 5
+
+# With real data
+students_db = [
+    {"id": 1, "name": "Nikhil"},
+    {"id": 2, "name": "Rahul"},
+    {"id": 3, "name": "Priya"},
+]
+
+@app.get("/students/{student_id}")
+def get_student(student_id: int):
+    for student in students_db:
+        if student["id"] == student_id:
+            return student
+    return {"error": "Student not found"}
+```
+
+---
+
+### QUERY PARAMETERS — FILTERS IN URL
+
+```python
+@app.get("/search")
+def search_students(city: str, limit: int = 10):
+    return {
+        "searching_city": city,
+        "limit": limit,
+        "message": f"Showing {limit} students from {city}"
+    }
+
+# URL: /search?city=Kadi          → limit defaults to 10
+# URL: /search?city=Kadi&limit=5  → limit is 5
+```
+
+```
+Path param  → part of URL      /students/1
+Query param → after ?          /search?city=Kadi
+```
+
+---
+
+### MULTIPLE ROUTES — CLEAN STRUCTURE
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI(
+    title="Nikhil's Student API",
+    description="Backend API for student management",
+    version="1.0"
+)
+
+# Fake database
+students_db = [
+    {"id": 1, "name": "Nikhil", "age": 21, "city": "Kadi"},
+    {"id": 2, "name": "Rahul",  "age": 22, "city": "Surat"},
+    {"id": 3, "name": "Priya",  "age": 20, "city": "Ahmedabad"},
+]
+
+@app.get("/")
+def root():
+    return {"message": "Student API Running"}
+
+@app.get("/students")
+def all_students():
+    return {"students": students_db, "count": len(students_db)}
+
+@app.get("/students/{student_id}")
+def one_student(student_id: int):
+    for s in students_db:
+        if s["id"] == student_id:
+            return s
+    return {"error": "Not found"}
+
+@app.get("/students/search/by-city")
+def by_city(city: str):
+    result = [s for s in students_db if s["city"].lower() == city.lower()]
+    return {"city": city, "students": result, "count": len(result)}
+```
+
+---
+
+### STATUS CODES — WHAT THEY MEAN
+
+```
+200 → OK — request successful
+201 → Created — new data created
+400 → Bad Request — wrong input from user
+404 → Not Found — data does not exist
+500 → Internal Server Error — bug in your code
+```
+
+---
+
+### RETURN STATUS CODE WITH RESPONSE
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/students/{student_id}")
+def get_student(student_id: int):
+    students_db = [{"id": 1, "name": "Nikhil"}]
+
+    for s in students_db:
+        if s["id"] == student_id:
+            return s                                   # 200 by default
+
+    return JSONResponse(
+        status_code=404,
+        content={"error": "Student not found"}
+    )
+
+# /students/1  → 200 + student data
+# /students/99 → 404 + error message
+```
+
+---
+
+## COMMON MISTAKES
+
+**Mistake 1 — File not named main.py:**
+```bash
+# If file is app.py
+uvicorn app:app --reload    # change "main" to "app"
+```
+
+**Mistake 2 — Port already in use:**
+```bash
+uvicorn main:app --reload --port 8001   # use different port
+```
+
+**Mistake 3 — Conflicting routes:**
+```python
+# WRONG — FastAPI reads top to bottom
+@app.get("/students/search")     # never reached
+@app.get("/students/{id}")       # "search" treated as id
+
+# RIGHT — specific routes ABOVE dynamic routes
+@app.get("/students/search")     # specific first
+@app.get("/students/{id}")       # dynamic after
+```
+
+---
