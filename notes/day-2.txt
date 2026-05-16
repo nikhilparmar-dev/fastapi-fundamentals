@@ -1,0 +1,215 @@
+TODAY'S PLAN — Week 2, Day 2
+Topic: POST API + JSON Request + Pydantic Models
+WHAT TO DO TODAY:
+Continue in your main.py or create day9_post_pydantic.py
+Type every example yourself — no copy paste
+Test everything in /docs — not just browser
+Complete the practice task
+NOTES
+Why POST:
+GET  → read data   → data sent in URL
+POST → send data   → data sent in request body (JSON)
+WHAT IS PYDANTIC
+Definition: A library that validates incoming data automatically. If wrong data comes — it rejects it before your code runs.
+Without Pydantic → you check data manually
+With Pydantic    → FastAPI checks automatically
+BASIC PYDANTIC MODEL
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# Define what data you expect
+class Student(BaseModel):
+    name: str
+    age: int
+    city: str
+    course: str
+
+@app.post("/students")
+def create_student(student: Student):
+    return {
+        "message": "Student created successfully",
+        "data": student
+    }
+Test in /docs:
+{
+    "name": "Nikhil",
+    "age": 21,
+    "city": "Kadi",
+    "course": "BCA"
+}
+Pydantic auto-rejects:
+{"name": "Nikhil", "age": "wrong"}   → 422 error — age must be int
+{"name": "Nikhil"}                   → 422 error — missing fields
+OPTIONAL FIELDS + DEFAULT VALUES
+from typing import Optional
+
+class Student(BaseModel):
+    name: str
+    age: int
+    city: str
+    course: str
+    github: Optional[str] = None        # optional — default None
+    is_employed: bool = False           # optional — default False
+    skills: list = []                   # optional — default empty list
+
+@app.post("/students")
+def create_student(student: Student):
+    return student
+// Minimum required:
+{"name": "Nikhil", "age": 21, "city": "Kadi", "course": "BCA"}
+
+// With optional:
+{"name": "Nikhil", "age": 21, "city": "Kadi", "course": "BCA",
+ "github": "nikhil123", "skills": ["Python", "Django"]}
+PYDANTIC VALIDATION — FIELD LEVEL
+from pydantic import BaseModel, Field
+
+class Student(BaseModel):
+    name: str      = Field(min_length=2, max_length=50)
+    age: int       = Field(ge=1, le=100)      # ge=greater or equal, le=less or equal
+    city: str      = Field(min_length=2)
+    percentage: float = Field(ge=0.0, le=100.0)
+
+# ge → greater than or equal
+# le → less than or equal
+# gt → greater than
+# lt → less than
+
+@app.post("/students")
+def create_student(student: Student):
+    return {"message": "Validated and created", "data": student}
+Auto rejected:
+age = 0       → error — must be >= 1
+age = 150     → error — must be <= 100
+name = "N"    → error — min length 2
+percentage = 105 → error — must be <= 100
+FAKE DATABASE — SIMULATE REAL BACKEND
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Optional
+
+app = FastAPI()
+
+# Fake DB — list of dicts
+students_db = []
+id_counter = 1
+
+class Student(BaseModel):
+    name: str
+    age: int
+    city: str
+    course: str
+
+# GET all students
+@app.get("/students")
+def get_students():
+    return {"students": students_db, "total": len(students_db)}
+
+# POST — create new student
+@app.post("/students")
+def create_student(student: Student):
+    global id_counter
+    new_student = {
+        "id": id_counter,
+        "name": student.name,
+        "age": student.age,
+        "city": student.city,
+        "course": student.course
+    }
+    students_db.append(new_student)
+    id_counter += 1
+    return {"message": "Student created", "data": new_student}
+
+# GET one student
+@app.get("/students/{student_id}")
+def get_student(student_id: int):
+    for s in students_db:
+        if s["id"] == student_id:
+            return s
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+ACCESS PYDANTIC MODEL DATA
+class Product(BaseModel):
+    name: str
+    price: float
+    quantity: int
+
+@app.post("/products")
+def create_product(product: Product):
+
+    # Access like object attributes
+    print(product.name)
+    print(product.price)
+
+    # Convert to dict
+    product_dict = product.dict()
+    print(product_dict)     # {"name": "...", "price": ..., "quantity": ...}
+
+    # Add extra fields
+    product_dict["id"] = 1
+    product_dict["in_stock"] = True
+
+    return product_dict
+RESPONSE MODEL — CONTROL OUTPUT
+from pydantic import BaseModel
+
+class StudentInput(BaseModel):       # what comes IN
+    name: str
+    age: int
+    password: str                    # sensitive
+
+class StudentOutput(BaseModel):      # what goes OUT
+    id: int
+    name: str
+    age: str
+    # password NOT included — never expose it
+
+@app.post("/students", response_model=StudentOutput)
+def create_student(student: StudentInput):
+    new_student = {
+        "id": 1,
+        "name": student.name,
+        "age": student.age,
+        # password never returned
+    }
+    return new_student
+COMBINING GET + POST + PATH + QUERY
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import Optional
+
+app = FastAPI()
+
+products_db = []
+counter = 1
+
+class Product(BaseModel):
+    name: str     = Field(min_length=2)
+    price: float  = Field(gt=0)
+    city: str
+    in_stock: bool = True
+
+@app.get("/products")
+def get_all(city: Optional[str] = None):
+    if city:
+        filtered = [p for p in products_db if p["city"] == city]
+        return {"products": filtered}
+    return {"products": products_db}
+
+@app.get("/products/{product_id}")
+def get_one(product_id: int):
+    for p in products_db:
+        if p["id"] == product_id:
+            return p
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+
+@app.post("/products")
+def create(product: Product):
+    global counter
+    new = product.dict()
+    new["id"] = counter
+    products_db.append(new)
+    counter += 1
+    return JSONResponse(status_code=201, content={"message": "Created", "data": new})
