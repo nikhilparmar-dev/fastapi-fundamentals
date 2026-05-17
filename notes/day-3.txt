@@ -1,0 +1,217 @@
+TODAY'S PLAN — Week 2, Day 3
+Topic: PUT + PATCH + DELETE — Complete CRUD API
+WHAT TO DO TODAY:
+Continue in your main.py or create day10_crud.py
+Type every example yourself — no copy paste
+Test all operations in /docs
+Complete the practice task
+NOTES
+CRUD — WHAT IT MEANS
+C → Create  → POST    → add new data
+R → Read    → GET     → fetch data
+U → Update  → PUT     → replace entire record
+            → PATCH   → update specific fields only
+D → Delete  → DELETE  → remove data
+Every real backend API is built on CRUD. Master this — everything else builds on top.
+PUT — REPLACE ENTIRE RECORD
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+students_db = [
+    {"id": 1, "name": "Nikhil", "age": 21, "city": "Kadi"},
+    {"id": 2, "name": "Rahul",  "age": 22, "city": "Surat"},
+]
+
+class Student(BaseModel):
+    name: str
+    age: int
+    city: str
+
+@app.put("/students/{student_id}")
+def update_student(student_id: int, student: Student):
+    for index, s in enumerate(students_db):
+        if s["id"] == student_id:
+            students_db[index] = {
+                "id": student_id,
+                "name": student.name,
+                "age": student.age,
+                "city": student.city
+            }
+            return {"message": "Updated", "data": students_db[index]}
+
+    return JSONResponse(status_code=404, content={"error": "Student not found"})
+PUT replaces everything:
+// Old record:
+{"id": 1, "name": "Nikhil", "age": 21, "city": "Kadi"}
+
+// PUT body:
+{"name": "Nikhil R", "age": 22, "city": "Ahmedabad"}
+
+// New record:
+{"id": 1, "name": "Nikhil R", "age": 22, "city": "Ahmedabad"}
+PATCH — UPDATE SPECIFIC FIELDS ONLY
+from typing import Optional
+
+class StudentUpdate(BaseModel):
+    name:  Optional[str] = None     # all optional for PATCH
+    age:   Optional[int] = None
+    city:  Optional[str] = None
+
+@app.patch("/students/{student_id}")
+def partial_update(student_id: int, updates: StudentUpdate):
+    for index, s in enumerate(students_db):
+        if s["id"] == student_id:
+
+            # Only update fields that were sent
+            if updates.name is not None:
+                students_db[index]["name"] = updates.name
+            if updates.age is not None:
+                students_db[index]["age"] = updates.age
+            if updates.city is not None:
+                students_db[index]["city"] = updates.city
+
+            return {"message": "Partially updated", "data": students_db[index]}
+
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+PATCH updates only what you send:
+// Old record:
+{"id": 1, "name": "Nikhil", "age": 21, "city": "Kadi"}
+
+// PATCH body — only city:
+{"city": "Ahmedabad"}
+
+// New record:
+{"id": 1, "name": "Nikhil", "age": 21, "city": "Ahmedabad"}
+// name and age unchanged
+DELETE — REMOVE RECORD
+@app.delete("/students/{student_id}")
+def delete_student(student_id: int):
+    for index, s in enumerate(students_db):
+        if s["id"] == student_id:
+            deleted = students_db.pop(index)
+            return {"message": "Deleted successfully", "deleted": deleted}
+
+    return JSONResponse(status_code=404, content={"error": "Student not found"})
+COMPLETE CRUD IN ONE FILE
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from typing import Optional
+
+app = FastAPI(title="Student CRUD API")
+
+# Fake database
+db = []
+counter = 1
+
+# Models
+class StudentCreate(BaseModel):
+    name: str  = Field(min_length=2)
+    age: int   = Field(ge=1, le=100)
+    city: str
+    course: str
+
+class StudentUpdate(BaseModel):
+    name:   Optional[str] = None
+    age:    Optional[int] = None
+    city:   Optional[str] = None
+    course: Optional[str] = None
+
+# CREATE
+@app.post("/students", status_code=201)
+def create(student: StudentCreate):
+    global counter
+    new = student.dict()
+    new["id"] = counter
+    db.append(new)
+    counter += 1
+    return {"message": "Created", "data": new}
+
+# READ ALL
+@app.get("/students")
+def get_all():
+    return {"students": db, "total": len(db)}
+
+# READ ONE
+@app.get("/students/{student_id}")
+def get_one(student_id: int):
+    for s in db:
+        if s["id"] == student_id:
+            return s
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+
+# UPDATE — full replace
+@app.put("/students/{student_id}")
+def update(student_id: int, student: StudentCreate):
+    for i, s in enumerate(db):
+        if s["id"] == student_id:
+            db[i] = {"id": student_id, **student.dict()}
+            return {"message": "Updated", "data": db[i]}
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+
+# PATCH — partial update
+@app.patch("/students/{student_id}")
+def partial_update(student_id: int, updates: StudentUpdate):
+    for i, s in enumerate(db):
+        if s["id"] == student_id:
+            update_data = updates.dict(exclude_none=True)  # skip None fields
+            db[i].update(update_data)
+            return {"message": "Partially updated", "data": db[i]}
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+
+# DELETE
+@app.delete("/students/{student_id}")
+def delete(student_id: int):
+    for i, s in enumerate(db):
+        if s["id"] == student_id:
+            removed = db.pop(i)
+            return {"message": "Deleted", "deleted": removed}
+    return JSONResponse(status_code=404, content={"error": "Not found"})
+exclude_none=True — IMPORTANT TRICK
+updates = StudentUpdate(city="Ahmedabad")  # only city sent
+updates.dict()
+# → {"name": None, "age": None, "city": "Ahmedabad"}
+
+updates.dict(exclude_none=True)
+# → {"city": "Ahmedabad"}   ← only non-None values
+Use this in PATCH — otherwise None values overwrite existing data.
+HTTP METHODS SUMMARY
+GET    /students        → get all
+GET    /students/1      → get one
+POST   /students        → create new
+PUT    /students/1      → replace full record
+PATCH  /students/1      → update specific fields
+DELETE /students/1      → delete record
+STATUS CODES FOR CRUD
+GET    success → 200
+POST   success → 201 Created
+PUT    success → 200
+PATCH  success → 200
+DELETE success → 200
+Not found      → 404
+Invalid data   → 422 (Pydantic handles automatically)
+Server error   → 500
+COMMON MISTAKES
+Mistake 1 — Using PUT when PATCH needed:
+# PUT with only city field
+{"city": "Ahmedabad"}
+# → name and age become None — data lost
+
+# Use PATCH for partial updates
+Mistake 2 — Not using exclude_none in PATCH:
+# WRONG
+update_data = updates.dict()          # includes None values
+db[i].update(update_data)             # overwrites with None
+
+# RIGHT
+update_data = updates.dict(exclude_none=True)
+db[i].update(update_data)
+Mistake 3 — Forgetting status_code=201 on POST:
+# Returns 200 by default — not wrong but not correct
+@app.post("/students")
+
+# RIGHT
+@app.post("/students", status_code=201)
