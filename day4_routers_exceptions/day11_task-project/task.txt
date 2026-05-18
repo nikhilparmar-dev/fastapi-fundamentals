@@ -1,0 +1,29 @@
+day11_task/
+├── main.py
+├── routers/
+│   ├── __init__.py
+│   ├── students.py     ← full CRUD with HTTPException
+│   └── products.py     ← full CRUD with HTTPException
+
+Requirements:
+1. Students router:
+   - All 6 CRUD endpoints
+   - HTTPException for all 404 cases
+   - Custom error message with student_id in detail
+
+2. Products router:
+   - All 6 CRUD endpoints
+   - HTTPException for all errors
+   - GET /products/?city=Kadi filter
+
+3. main.py:
+   - Include both routers
+   - Global exception handler
+   - Custom 422 validation error handler
+
+4. Test in /docs:
+   - Create 2 students, 2 products
+   - Update one of each
+   - Delete one of each
+   - Try fetching deleted id → 404
+   - Try invalid data → custom 422
