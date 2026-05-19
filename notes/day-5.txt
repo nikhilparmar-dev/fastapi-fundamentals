@@ -1,0 +1,283 @@
+TODAY'S PLAN — Week 2, Day 5
+Topic: SQLite + FastAPI — Real Database Connection
+WHAT TO DO TODAY:
+Create folder day12_sqlite_api/
+Type every example yourself — no copy paste
+Test in /docs — data must persist after restart
+Complete the practice task
+NOTES
+WHY REAL DATABASE
+Fake DB (list) → data gone when server restarts
+SQLite DB      → data saved in file permanently
+INSTALL
+pip install fastapi uvicorn
+# sqlite3 is built into Python — no install needed
+PROJECT STRUCTURE
+day12_sqlite_api/
+├── main.py
+├── database.py       ← DB connection + table creation
+└── routers/
+    ├── __init__.py
+    └── students.py
+database.py — CONNECTION SETUP
+import sqlite3
+
+DB_NAME = "school.db"
+
+def get_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row    # returns dict-like rows
+    return conn
+
+def create_tables():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            name    TEXT    NOT NULL,
+            age     INTEGER NOT NULL,
+            city    TEXT    NOT NULL,
+            course  TEXT    NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+sqlite3.connect()    → opens/creates DB file
+conn.row_factory     → makes rows behave like dicts
+cursor               → executes SQL commands
+CREATE IF NOT EXISTS → safe — won't crash if table exists
+AUTOINCREMENT        → id auto increases
+conn.commit()        → saves changes
+conn.close()         → closes connection
+main.py
+from fastapi import FastAPI
+from database import create_tables
+from routers import students
+
+app = FastAPI(title="School API with SQLite")
+
+# Create tables when server starts
+@app.on_event("startup")
+def startup():
+    create_tables()
+
+app.include_router(students.router)
+
+@app.get("/")
+def root():
+    return {"message": "School API Running"}
+routers/students.py — FULL SQLITE CRUD
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional
+from database import get_connection
+
+router = APIRouter(prefix="/students", tags=["Students"])
+
+class StudentCreate(BaseModel):
+    name:   str = Field(min_length=2)
+    age:    int = Field(ge=1, le=100)
+    city:   str
+    course: str
+
+class StudentUpdate(BaseModel):
+    name:   Optional[str] = None
+    age:    Optional[int] = None
+    city:   Optional[str] = None
+    course: Optional[str] = None
+
+# ── CREATE ───────────────────────────────────────
+@router.post("/", status_code=201)
+def create_student(student: StudentCreate):
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO students (name, age, city, course)
+        VALUES (?, ?, ?, ?)
+    """, (student.name, student.age, student.city, student.course))
+
+    conn.commit()
+    new_id = cursor.lastrowid     # id of just inserted row
+    conn.close()
+
+    return {
+        "message": "Student created",
+        "data": {"id": new_id, **student.dict()}
+    }
+
+# ── READ ALL ─────────────────────────────────────
+@router.get("/")
+def get_all_students():
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM students")
+    rows = cursor.fetchall()
+    conn.close()
+
+    students = [dict(row) for row in rows]
+    return {"students": students, "total": len(students)}
+
+# ── READ ONE ─────────────────────────────────────
+@router.get("/{student_id}")
+def get_student(student_id: int):
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    return dict(row)
+
+# ── UPDATE — full replace ─────────────────────────
+@router.put("/{student_id}")
+def update_student(student_id: int, student: StudentCreate):
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    cursor.execute("""
+        UPDATE students
+        SET name = ?, age = ?, city = ?, course = ?
+        WHERE id = ?
+    """, (student.name, student.age, student.city, student.course, student_id))
+
+    conn.commit()
+    conn.close()
+    return {"message": "Updated", "data": {"id": student_id, **student.dict()}}
+
+# ── PATCH — partial update ────────────────────────
+@router.patch("/{student_id}")
+def partial_update(student_id: int, updates: StudentUpdate):
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
+    existing = cursor.fetchone()
+
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Only update fields that were sent
+    existing = dict(existing)
+    update_data = updates.dict(exclude_none=True)
+
+    new_name   = update_data.get("name",   existing["name"])
+    new_age    = update_data.get("age",    existing["age"])
+    new_city   = update_data.get("city",   existing["city"])
+    new_course = update_data.get("course", existing["course"])
+
+    cursor.execute("""
+        UPDATE students
+        SET name = ?, age = ?, city = ?, course = ?
+        WHERE id = ?
+    """, (new_name, new_age, new_city, new_course, student_id))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "message": "Partially updated",
+        "data": {
+            "id": student_id,
+            "name": new_name,
+            "age": new_age,
+            "city": new_city,
+            "course": new_course
+        }
+    }
+
+# ── DELETE ────────────────────────────────────────
+@router.delete("/{student_id}")
+def delete_student(student_id: int):
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM students WHERE id = ?", (student_id,))
+    existing = cursor.fetchone()
+
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    cursor.execute("DELETE FROM students WHERE id = ?", (student_id,))
+    conn.commit()
+    conn.close()
+
+    return {"message": "Deleted", "deleted": dict(existing)}
+IMPORTANT SQLITE CONCEPTS
+? Placeholder — ALWAYS use this:
+# WRONG — SQL Injection risk
+cursor.execute(f"SELECT * FROM students WHERE name = '{name}'")
+
+# RIGHT — safe placeholder
+cursor.execute("SELECT * FROM students WHERE name = ?", (name,))
+fetchone vs fetchall:
+cursor.fetchone()    # returns one row or None
+cursor.fetchall()    # returns list of all rows
+dict(row) — convert row to dict:
+# row_factory = sqlite3.Row makes this work
+row = cursor.fetchone()
+print(dict(row))    # {"id": 1, "name": "Nikhil", ...}
+lastrowid — get new record id:
+cursor.execute("INSERT INTO ...")
+new_id = cursor.lastrowid    # id of just inserted row
+Always close connection:
+conn.commit()    # save changes first
+conn.close()     # then close
+QUERY WITH FILTER
+@router.get("/search/by-city")
+def by_city(city: str):
+    conn   = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT * FROM students WHERE city = ?",
+        (city,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        "city": city,
+        "students": [dict(r) for r in rows],
+        "count": len(rows)
+    }
+COMMON MISTAKES
+Mistake 1 — Forgetting conn.commit():
+# WRONG — data not saved
+cursor.execute("INSERT INTO students ...")
+conn.close()           # changes lost
+
+# RIGHT
+cursor.execute("INSERT INTO students ...")
+conn.commit()          # save first
+conn.close()           # then close
+Mistake 2 — Not checking if record exists before update/delete:
+# WRONG — updates 0 rows silently
+cursor.execute("UPDATE students SET name=? WHERE id=?", ("x", 999))
+conn.commit()          # no error — but nothing happened
+
+# RIGHT — check first
+cursor.execute("SELECT * FROM students WHERE id=?", (999,))
+if not cursor.fetchone():
+    raise HTTPException(status_code=404, detail="Not found")
+Mistake 3 — f-string in SQL:
+# WRONG — SQL Injection
+cursor.execute(f"DELETE FROM students WHERE id={student_id}")
+
+# RIGHT
+cursor.execute("DELETE FROM students WHERE id=?", (student_id,))
